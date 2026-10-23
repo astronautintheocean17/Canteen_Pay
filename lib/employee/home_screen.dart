@@ -19,6 +19,40 @@ class _HomeScreenState extends State<HomeScreen> {
   final Map<String, RowStatus> _statuses = {};
 
   bool _isScanning = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenToTransactions();
+  }
+
+  void _listenToTransactions() {
+    _api.streamTransactions().listen((txList) {
+      if (!mounted) return;
+      setState(() {
+        for (final tx in txList) {
+          if (!tx.redeemed) {
+            // Keep existing status if row was already pending or saving
+            final currentStatus = _statuses[tx.rollNumber];
+            if (currentStatus != RowStatus.saving &&
+                currentStatus != RowStatus.redeeming) {
+              _transactions[tx.rollNumber] = tx;
+              _statuses[tx.rollNumber] = RowStatus.saved;
+            }
+          } else {
+            // If redeemed in backend, remove from active list
+            _transactions.remove(tx.rollNumber);
+            _statuses.remove(tx.rollNumber);
+          }
+        }
+        _isLoading = false;
+      });
+    }, onError: (err) {
+      debugPrint('Error streaming transactions: $err');
+      if (mounted) setState(() => _isLoading = false);
+    });
+  }
 
   // ---------- Scanning ----------
   Future<void> _startScanner() async {
@@ -163,21 +197,23 @@ class _HomeScreenState extends State<HomeScreen> {
             _buildActionsBar(),
             _buildTableHeader(),
             Expanded(
-              child: rolls.isEmpty
-                  ? _buildEmptyState()
-                  : ListView.builder(
-                      itemCount: rolls.length,
-                      itemBuilder: (context, i) {
-                        final roll = rolls[i];
-                        return TransactionRow(
-                          key: ValueKey(roll),
-                          transaction: _transactions[roll]!,
-                          status: _statuses[roll] ?? RowStatus.pending,
-                          onSave: (amount) => _save(roll, amount),
-                          onRedeem: () => _redeem(roll),
-                        );
-                      },
-                    ),
+              child: _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : rolls.isEmpty
+                      ? _buildEmptyState()
+                      : ListView.builder(
+                          itemCount: rolls.length,
+                          itemBuilder: (context, i) {
+                            final roll = rolls[i];
+                            return TransactionRow(
+                              key: ValueKey(roll),
+                              transaction: _transactions[roll]!,
+                              status: _statuses[roll] ?? RowStatus.pending,
+                              onSave: (amount) => _save(roll, amount),
+                              onRedeem: () => _redeem(roll),
+                            );
+                          },
+                        ),
             ),
           ],
         ),
