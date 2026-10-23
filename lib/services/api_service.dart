@@ -1,40 +1,74 @@
+import 'package:cloud_firestore/cloud_firestore.dart' hide Transaction;
 import '../models/transaction.dart';
 
 class ApiService {
-  // Singleton
   ApiService._internal();
   static final ApiService instance = ApiService._internal();
 
-  // In-memory store (replace with real backend calls)
-  final List<Transaction> _store = [];
+  final CollectionReference<Map<String, dynamic>> _txCol =
+      FirebaseFirestore.instance.collection('transactions');
 
-  /// Save a new transaction to the backend.
-  /// Returns the saved Transaction (with server-assigned id).
+  /// Save a new transaction to Cloud Firestore.
+  /// Returns the saved Transaction with the Firestore document ID.
   Future<Transaction> saveTransaction(Transaction tx) async {
-    await Future.delayed(const Duration(milliseconds: 400)); // simulate network
-
-    final saved = tx.copyWith(
-      id: DateTime.now().microsecondsSinceEpoch.toString(),
+    final docRef = _txCol.doc();
+    final newTx = tx.copyWith(
+      id: docRef.id,
       redeemed: false,
     );
-    _store.add(saved);
-    return saved;
+
+    await docRef.set(newTx.toJson());
+    return newTx;
   }
 
-  /// Mark a transaction as redeemed on the backend.
+  /// Mark a transaction as redeemed in Cloud Firestore.
   Future<bool> redeemTransaction(String id) async {
-    await Future.delayed(const Duration(milliseconds: 400)); // simulate network
+    try {
+      final docRef = _txCol.doc(id);
+      final snapshot = await docRef.get();
 
-    final index = _store.indexWhere((t) => t.id == id);
-    if (index == -1) return false;
+      if (!snapshot.exists) {
+        return false;
+      }
 
-    _store[index] = _store[index].copyWith(redeemed: true);
-    return true;
+      final data = snapshot.data();
+      final isAlreadyRedeemed = data?['redeemed'] as bool? ?? false;
+      if (isAlreadyRedeemed) {
+        return false; // already redeemed
+      }
+
+      await docRef.update({
+        'redeemed': true,
+        'redeemedAt': FieldValue.serverTimestamp(),
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// (Optional) Fetch all active (non-redeemed) transactions.
+  /// Fetch all active (non-redeemed) transactions.
   Future<List<Transaction>> fetchActiveTransactions() async {
-    await Future.delayed(const Duration(milliseconds: 200));
-    return _store.where((t) => !t.redeemed).toList();
+    try {
+      final snapshot = await _txCol
+          .where('redeemed', isEqualTo: false)
+          .orderBy('createdAt', descending: true)
+          .get();
+
+      return snapshot.docs
+          .map((doc) => Transaction.fromJson({...doc.data(), 'id': doc.id}))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  /// Real-time stream of all transactions.
+  Stream<List<Transaction>> streamTransactions() {
+    return _txCol.snapshots().map((snapshot) {
+      return snapshot.docs
+          .map((doc) => Transaction.fromJson({...doc.data(), 'id': doc.id}))
+          .toList();
+    });
   }
 }

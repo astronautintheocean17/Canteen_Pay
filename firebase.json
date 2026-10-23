@@ -1,0 +1,28 @@
+{
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "student-pay-1e6d4",
+          "appId": "1:515463936307:android:18ef7c90a77539aa3d6646",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "student-pay-1e6d4",
+          "configurations": {
+            "android": "1:515463936307:android:18ef7c90a77539aa3d6646",
+            "ios": "1:515463936307:ios:4f5c5e51245e70c33d6646",
+            "macos": "1:515463936307:ios:4f5c5e51245e70c33d6646",
+            "web": "1:515463936307:web:3e495f17b40ef69c3d6646",
+            "windows": "1:515463936307:web:c23de877d1519c6d3d6646"
+          }
+        }
+      }
+    }
+  }
+}
