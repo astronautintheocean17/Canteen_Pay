@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "515463936307",
+    "project_id": "student-pay-1e6d4",
+    "storage_bucket": "student-pay-1e6d4.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:515463936307:android:18ef7c90a77539aa3d6646",
+        "android_client_info": {
+          "package_name": "com.example.student_pay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDK0WOBVRSNHE1QYuK_XyLTRGNdGP-p07E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

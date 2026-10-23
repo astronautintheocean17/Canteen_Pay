@@ -1,8 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'role_selection_screen.dart';
 import 'services/auth_service.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   // ---------------------------------------------------------------
   // PRE-SEED DEFAULT ACCOUNTS
   // Runs once at app startup. Creates a default vendor + employee
@@ -17,20 +23,7 @@ void main() {
   // every hot restart / app relaunch. That is why we seed here.
   // ---------------------------------------------------------------
 
-  final auth = AuthService.instance;
-
-  if (!auth.vendorUsernameExists('vendor1')) {
-    final vendor = auth.addVendor(
-      username: 'vendor1',
-      password: 'vendor1',
-    );
-
-    auth.addEmployee(
-      vendorId: vendor.id,
-      username: 'emp1',
-      password: 'emp1',
-    );
-  }
+  await AuthService.instance.init();
 
   runApp(const MyApp());
 }

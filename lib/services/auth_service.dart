@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/vendor.dart';
 import '../models/employee.dart';
 
@@ -9,12 +10,61 @@ class AuthService {
   static const String adminUsername = 'admin';
   static const String adminPassword = 'admin123';
 
-  // ---------- In-memory stores ----------
-  final List<Vendor> _vendors = [];
-  final List<Employee> _employees = [];
+  final CollectionReference<Map<String, dynamic>> _vendorCol =
+      FirebaseFirestore.instance.collection('vendors');
+  final CollectionReference<Map<String, dynamic>> _employeeCol =
+      FirebaseFirestore.instance.collection('employees');
 
-  int _vendorSeq = 1;
-  int _employeeSeq = 1;
+  // Local cache kept in sync with Firestore for instant synchronous reads
+  List<Vendor> _vendors = [];
+  List<Employee> _employees = [];
+
+  bool _initialized = false;
+
+  /// Initialize real-time sync with Firestore for Vendors and Employees
+  Future<void> init() async {
+    if (_initialized) return;
+    _initialized = true;
+
+    // Listen to vendors collection
+    _vendorCol.snapshots().listen((snapshot) {
+      _vendors = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Vendor.fromJson({...data, 'id': doc.id});
+      }).toList();
+    });
+
+    // Listen to employees collection
+    _employeeCol.snapshots().listen((snapshot) {
+      _employees = snapshot.docs.map((doc) {
+        final data = doc.data();
+        return Employee.fromJson({...data, 'id': doc.id});
+      }).toList();
+    });
+
+    // Initial fetch to ensure cache is populated
+    final vSnap = await _vendorCol.get();
+    _vendors = vSnap.docs.map((doc) {
+      final data = doc.data();
+      return Vendor.fromJson({...data, 'id': doc.id});
+    }).toList();
+
+    final eSnap = await _employeeCol.get();
+    _employees = eSnap.docs.map((doc) {
+      final data = doc.data();
+      return Employee.fromJson({...data, 'id': doc.id});
+    }).toList();
+
+    // Seed default vendor and employee if none exist
+    if (!vendorUsernameExists('vendor1')) {
+      final v = await addVendor(username: 'vendor1', password: 'vendor1');
+      await addEmployee(
+        vendorId: v.id,
+        username: 'emp1',
+        password: 'emp1',
+      );
+    }
+  }
 
   // ---------- Admin ----------
   bool adminLogin(String username, String password) {
@@ -33,29 +83,50 @@ class AuthService {
     );
   }
 
-  Vendor addVendor({required String username, required String password}) {
+  Future<Vendor> addVendor({required String username, required String password}) async {
+    final docRef = _vendorCol.doc();
     final vendor = Vendor(
-      id: 'V${_vendorSeq++}',
+      id: docRef.id,
       username: username.trim(),
       password: password.trim(),
     );
-    _vendors.add(vendor);
+
+    // Save permanently in Cloud Firestore
+    await docRef.set(vendor.toJson());
+    if (!_vendors.any((v) => v.id == vendor.id)) {
+      _vendors.add(vendor);
+    }
     return vendor;
   }
 
-  void updateVendor(String id, {String? username, String? password}) {
-    final v = _vendors.firstWhere((e) => e.id == id);
+  Future<void> updateVendor(String id, {String? username, String? password}) async {
+    final Map<String, dynamic> updates = {};
     if (username != null && username.trim().isNotEmpty) {
-      v.username = username.trim();
+      updates['username'] = username.trim();
     }
     if (password != null && password.trim().isNotEmpty) {
-      v.password = password.trim();
+      updates['password'] = password.trim();
+    }
+
+    if (updates.isNotEmpty) {
+      await _vendorCol.doc(id).update(updates);
+      final idx = _vendors.indexWhere((v) => v.id == id);
+      if (idx != -1) {
+        if (updates.containsKey('username')) _vendors[idx].username = updates['username'];
+        if (updates.containsKey('password')) _vendors[idx].password = updates['password'];
+      }
     }
   }
 
-  void deleteVendor(String id) {
-    _vendors.removeWhere((e) => e.id == id);
-    _employees.removeWhere((e) => e.vendorId == id);
+  Future<void> deleteVendor(String id) async {
+    await _vendorCol.doc(id).delete();
+    _vendors.removeWhere((v) => v.id == id);
+
+    // Also remove vendor's employees
+    final emps = _employees.where((e) => e.vendorId == id).toList();
+    for (final emp in emps) {
+      await deleteEmployee(emp.id);
+    }
   }
 
   Vendor? findVendorById(String id) {
@@ -79,8 +150,7 @@ class AuthService {
   List<Employee> employeesOf(String vendorId) =>
       _employees.where((e) => e.vendorId == vendorId).toList();
 
-  bool employeeUsernameExists(String vendorId, String username,
-      {String? ignoreId}) {
+  bool employeeUsernameExists(String vendorId, String username, {String? ignoreId}) {
     return _employees.any(
       (e) =>
           e.vendorId == vendorId &&
@@ -89,33 +159,48 @@ class AuthService {
     );
   }
 
-  Employee addEmployee({
+  Future<Employee> addEmployee({
     required String vendorId,
     required String username,
     required String password,
-  }) {
+  }) async {
+    final docRef = _employeeCol.doc();
     final emp = Employee(
-      id: 'E${_employeeSeq++}',
+      id: docRef.id,
       username: username.trim(),
       password: password.trim(),
       vendorId: vendorId,
     );
-    _employees.add(emp);
+
+    // Save permanently in Cloud Firestore
+    await docRef.set(emp.toJson());
+    if (!_employees.any((e) => e.id == emp.id)) {
+      _employees.add(emp);
+    }
     return emp;
   }
 
-  void updateEmployee(String id,
-      {String? username, String? password}) {
-    final e = _employees.firstWhere((x) => x.id == id);
+  Future<void> updateEmployee(String id, {String? username, String? password}) async {
+    final Map<String, dynamic> updates = {};
     if (username != null && username.trim().isNotEmpty) {
-      e.username = username.trim();
+      updates['username'] = username.trim();
     }
     if (password != null && password.trim().isNotEmpty) {
-      e.password = password.trim();
+      updates['password'] = password.trim();
+    }
+
+    if (updates.isNotEmpty) {
+      await _employeeCol.doc(id).update(updates);
+      final idx = _employees.indexWhere((e) => e.id == id);
+      if (idx != -1) {
+        if (updates.containsKey('username')) _employees[idx].username = updates['username'];
+        if (updates.containsKey('password')) _employees[idx].password = updates['password'];
+      }
     }
   }
 
-  void deleteEmployee(String id) {
+  Future<void> deleteEmployee(String id) async {
+    await _employeeCol.doc(id).delete();
     _employees.removeWhere((e) => e.id == id);
   }
 
